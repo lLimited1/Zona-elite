@@ -344,12 +344,15 @@ const PS5="PlayStation 5", XSX="Xbox Series X", NS2="Nintendo Switch 2", PS4="Pl
 const CONSOLE_TYPES = [PS5,XSX,NS2,PS4,DECK];
 const ALL_PLATFORMS = [PS5,XSX,NS2,PS4,DECK];
 
+// logo: imagen de la marca (carpeta imagenes/consolas junto a este HTML). Se usa por defecto en todas las consolas de ese tipo;
+// si el archivo falta, o la consola tiene su propia imagen, ConsoleThumb se ajusta solo.
+const CONSOLE_LOGO_DIR = "imagenes/consolas/";
 const PLATFORM_STYLE = {
-  [PS5]:{short:"PS5",hex:"#4F8BFF",name:"PS5"},
-  [PS4]:{short:"PS4",hex:"#8B93FF",name:"PS4"},
-  [XSX]:{short:"XSX",hex:"#3DDC84",name:"Xbox"},
-  [NS2]:{short:"NS2",hex:"#FF6F91",name:"Switch"},
-  [DECK]:{short:"DECK",hex:"#B79CFF",name:"Steam Deck"},
+  [PS5]:{short:"PS5",hex:"#4F8BFF",name:"PS5",logo:CONSOLE_LOGO_DIR+"playstation.jpg"},
+  [PS4]:{short:"PS4",hex:"#8B93FF",name:"PS4",logo:CONSOLE_LOGO_DIR+"playstation.jpg"},
+  [XSX]:{short:"XSX",hex:"#3DDC84",name:"Xbox",logo:CONSOLE_LOGO_DIR+"xbox.jpg"},
+  [NS2]:{short:"NS2",hex:"#FF6F91",name:"Switch",logo:CONSOLE_LOGO_DIR+"switch-2.jpg"},
+  [DECK]:{short:"DECK",hex:"#B79CFF",name:"Steam Deck",logo:CONSOLE_LOGO_DIR+"steam-deck.jpg"},
 };
 
 const GENRES = {
@@ -1129,9 +1132,12 @@ function GameCover({game,className="w-10 h-10",text="text-[11px]"}){
 }
 
 function ConsoleThumb({c,className="w-10 h-10",text="text-[11px]"}){
+  const p = platformOf(c?.type);
+  const src = c?.img || p.logo;                       // la imagen propia de la consola, y si no, el logo de su marca
+  const [failed,setFailed] = useState(false);
+  useEffect(()=>{ setFailed(false); },[src]);
   if(!c) return <span className={"cover-empty "+className}><Icon name="monitor" size={16}/></span>;
-  if(c.img) return <img src={c.img} alt={c.name} title={c.name} className={"cover-img "+className}/>;
-  const p = platformOf(c.type);
+  if(src && !failed) return <img src={src} alt={c.name} title={c.name} onError={()=>setFailed(true)} className={"cover-img "+className}/>;
   return (
     <div className={"cover "+className} style={{"--g":hexToCh(p.hex)}} title={c.name}>
       <span className={"cover-abbr "+text}>{p.short}</span>
@@ -2007,7 +2013,7 @@ function ConsoleModal({open,onClose,app,editingId}){
           <ConsoleThumb c={{name,type:finalType,img}} className="w-20 h-20 shrink-0" text="text-sm"/>
           <div className="flex-1 min-w-0 pt-1">
             <p className="label">Imagen</p>
-            <ImagePicker value={img} onChange={setImg} hint="Opcional. Si no subes nada, se genera un logo con el tipo de consola."/>
+            <ImagePicker value={img} onChange={setImg} hint="Opcional. Si no subes nada, se usa el logo de la marca (PlayStation, Xbox…)."/>
           </div>
         </div>
         <div>
