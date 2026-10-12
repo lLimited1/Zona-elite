@@ -12,6 +12,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
   tailwind.config = {
     theme:{ extend:{
@@ -338,6 +339,13 @@ const {useState,useEffect,useMemo,useRef,useCallback,createContext,useContext} =
 const STORAGE_KEY = "zonaelite_state";
 const TAB_KEY = "zonaelite_tab";
 const LOCALE = "es-VE";
+
+// --- Supabase: reemplaza estos dos valores por los de tu proyecto (Settings → API). ---
+// La "anon key" está pensada para ir en el cliente: sin login válido, Row Level Security bloquea todo.
+const SUPABASE_URL = "https://evnezcbcvqmijmdujwsh.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_uQmhOSx4p2Afa8JV06NmSQ_FzKn5zvN";   // ← pega aquí la clave anon / publishable
+const sb = (SUPABASE_URL.includes("TU-PROYECTO") || !window.supabase) ? null
+  : window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const DAY = 86400000;
 
 const PS5="PlayStation 5", XSX="Xbox Series X", NS2="Nintendo Switch 2", PS4="PlayStation 4", DECK="Steam Deck";
@@ -874,18 +882,6 @@ function migrate(raw){
   };
 }
 
-function loadState(){
-  let raw = null;
-  try{ raw = localStorage.getItem(STORAGE_KEY); }catch(e){}
-  if(raw){
-    try{ return migrate(JSON.parse(raw)); }
-    catch(e){
-      // No perder datos ilegibles: se guardan aparte antes de empezar de cero.
-      try{ localStorage.setItem(STORAGE_KEY+"_corrupto_"+Date.now(), raw); }catch(_){}
-    }
-  }
-  return defaultState();
-}
 
 /* =====================================================================
    Sonido (Web Audio, sin archivos externos)
@@ -3056,6 +3052,105 @@ function AjustesView({app}){
 }
 
 /* =====================================================================
+   Autenticación y aislamiento por negocio (Supabase)
+   ===================================================================== */
+function Login(){
+  const [email,setEmail] = useState("");
+  const [password,setPassword] = useState("");
+  const [busy,setBusy] = useState(false);
+  const [err,setErr] = useState("");
+  async function submit(e){
+    e.preventDefault();
+    if(!email || !password || busy) return;
+    setBusy(true); setErr("");
+    const {error} = await sb.auth.signInWithPassword({email:email.trim(),password});
+    if(error) setErr(error.message==="Invalid login credentials" ? "Usuario o contraseña incorrectos." : error.message);
+    setBusy(false);
+  }
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6">
+      <form onSubmit={submit} className="panel p-6 w-full max-w-sm space-y-4">
+        <div className="flex items-center gap-3 mb-2">
+          <div className="logo-badge w-10 h-10 grid place-items-center font-display font-bold text-white text-sm">ZE</div>
+          <p className="brand-word">Zona <span className="text-accent">elite</span></p>
+        </div>
+        <div>
+          <label className="label" htmlFor="lg-email">Usuario</label>
+          <input id="lg-email" type="email" autoComplete="username" className="field" value={email} onChange={e=>setEmail(e.target.value)} required/>
+        </div>
+        <div>
+          <label className="label" htmlFor="lg-pass">Contraseña</label>
+          <input id="lg-pass" type="password" autoComplete="current-password" className="field" value={password} onChange={e=>setPassword(e.target.value)} required/>
+        </div>
+        {err && <p className="text-sm text-bad">{err}</p>}
+        <button className="btn btn-primary btn-md w-full" disabled={busy}>{busy?"Entrando…":"Entrar"}</button>
+      </form>
+    </div>
+  );
+}
+
+function GateMessage({title,text,onSignOut}){
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6 text-center">
+      <div className="panel p-6 max-w-sm">
+        <p className="font-display text-xl font-bold mb-2">{title}</p>
+        <p className="text-sm text-muted mb-5">{text}</p>
+        <button className="btn btn-ghost btn-md" onClick={onSignOut}>Cerrar sesión</button>
+      </div>
+    </div>
+  );
+}
+
+// Sin sesión: pantalla de login. Con sesión: busca a qué negocio pertenece (profiles → tenants) y si está activo.
+// Nadie puede entrar sin una cuenta que tú hayas creado a mano en Supabase, y cada cuenta solo ve los datos de su negocio.
+function Gate(){
+  const [status,setStatus] = useState(sb ? "loading" : "config");
+  const [session,setSession] = useState(null);
+  const [tenant,setTenant] = useState(null);
+  const [err,setErr] = useState("");
+
+  useEffect(()=>{
+    if(!sb) return;
+    sb.auth.getSession().then(({data})=>setSession(data.session||null));
+    const {data:sub} = sb.auth.onAuthStateChange((_evt,s)=>setSession(s));
+    return ()=>sub.subscription.unsubscribe();
+  },[]);
+
+  useEffect(()=>{
+    if(!sb) return;
+    if(!session){ setTenant(null); setStatus("signedOut"); return; }
+    let cancelled = false;
+    setStatus("loading");
+    sb.from("profiles").select("tenant_id, tenants(id,name,active)").eq("id",session.user.id).single()
+      .then(({data,error})=>{
+        if(cancelled) return;
+        if(error || !data?.tenants){ setErr("Esta cuenta no tiene un negocio asignado. Contacta al administrador."); setStatus("error"); return; }
+        if(!data.tenants.active){ setStatus("inactive"); return; }
+        setTenant(data.tenants); setStatus("ready");
+      });
+    return ()=>{ cancelled = true; };
+  },[session]);
+
+  if(status==="config") return <ConfigMissing/>;
+  if(status==="loading") return <div className="boot"><div className="boot-logo">ZE</div>Cargando panel…</div>;
+  if(status==="signedOut") return <Login/>;
+  if(status==="error") return <GateMessage title="No se pudo entrar" text={err} onSignOut={()=>sb.auth.signOut()}/>;
+  if(status==="inactive") return <GateMessage title="Cuenta desactivada" text="La suscripción de este negocio no está activa. Contacta al administrador para reactivarla." onSignOut={()=>sb.auth.signOut()}/>;
+  return <App tenantId={tenant.id} onSignOut={()=>sb.auth.signOut()}/>;
+}
+
+function ConfigMissing(){
+  return (
+    <div className="min-h-screen flex items-center justify-center p-6 text-center">
+      <div className="panel p-6 max-w-md">
+        <p className="font-display text-xl font-bold mb-2">Falta configurar Supabase</p>
+        <p className="text-sm text-muted">Completa SUPABASE_URL y SUPABASE_ANON_KEY al inicio del archivo con los datos de tu proyecto (Settings → API).</p>
+      </div>
+    </div>
+  );
+}
+
+/* =====================================================================
    App
    ===================================================================== */
 const NAV = [
@@ -3068,8 +3163,9 @@ const NAV = [
   {id:"ajustes",label:"Ajustes",title:"Ajustes",icon:"sliders",desc:"Tarifas, alertas, tasa y respaldo de datos."},
 ];
 
-function App(){
-  const [state,setState] = useState(loadState);
+function App({tenantId,onSignOut}){
+  const [state,setState] = useState(defaultState);
+  const loadedRef = useRef(false);   // evita guardar (y pisar lo remoto) antes de que termine la carga inicial
   const [tab,setTabState] = useState(()=>{ try{ const t=localStorage.getItem(TAB_KEY); return NAV.some(n=>n.id===t)?t:"resumen"; }catch(e){ return "resumen"; } });
   const [now,setNow] = useState(Date.now());
   const [modal,setModal] = useState(null);
@@ -3092,11 +3188,32 @@ function App(){
   },[]);
   const confirm = useCallback(req=>setConfirmReq(req),[]);
 
-  /* ---- Persistencia, reloj y desbloqueo de audio ---- */
+  /* ---- Carga y guardado por negocio (Supabase), reloj y desbloqueo de audio ---- */
   useEffect(()=>{
-    try{ localStorage.setItem(STORAGE_KEY,JSON.stringify(state)); }
-    catch(e){ notify("No se pudo guardar: el navegador no tiene más espacio. Quita alguna imagen o descarga un respaldo desde Ajustes.","bad","alert"); }
-  },[state,notify]);
+    if(!sb){ setState(migrate(null)); loadedRef.current = true; return; }
+    let cancelled = false;
+    loadedRef.current = false;
+    (async ()=>{
+      const {data,error} = await sb.from("tenant_state").select("data").eq("tenant_id",tenantId).maybeSingle();
+      if(cancelled) return;
+      if(error) notify("No se pudo cargar la información del negocio.","bad","alert");
+      setState(migrate(data?.data || null));
+      loadedRef.current = true;
+    })();
+    return ()=>{ cancelled = true; };
+  },[tenantId,notify]);
+
+  useEffect(()=>{
+    try{ localStorage.setItem(STORAGE_KEY,JSON.stringify(state)); }catch(e){}   // respaldo local; la nube es la fuente de verdad
+    if(!loadedRef.current) return;                                             // todavía cargando: no pisar lo remoto
+    if(!sb){ notify("Falta configurar Supabase: los cambios no se están guardando.","bad","alert"); return; }
+    const t = setTimeout(()=>{
+      sb.from("tenant_state").upsert({tenant_id:tenantId,data:state,updated_at:new Date().toISOString()}).then(({error})=>{
+        if(error) notify("No se pudo guardar en la nube: revisa tu conexión.","bad","alert");
+      });
+    },600);
+    return ()=>clearTimeout(t);
+  },[state,tenantId,notify]);
   useEffect(()=>{ const t=setInterval(()=>setNow(Date.now()),1000); return ()=>clearInterval(t); },[]);
   useEffect(()=>{
     const u=()=>Sound.unlock();
@@ -3505,6 +3622,7 @@ function App(){
                 <span className="text-xs text-muted">{settings.sonido?"Alertas sonoras activas":"Alertas sonoras apagadas"}</span>
               </div>
               <p className="text-[11px] text-muted mt-4 leading-relaxed"><kbd>N</kbd> nuevo alquiler · <kbd>1</kbd>–<kbd>7</kbd> secciones · <kbd>Esc</kbd> cerrar</p>
+              {onSignOut && <button className="btn btn-ghost btn-sm mt-4 w-full" onClick={onSignOut}>Cerrar sesión</button>}
             </div>
           </aside>
 
@@ -3592,7 +3710,7 @@ class ErrorBoundary extends React.Component{
   }
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<ErrorBoundary><App/></ErrorBoundary>);
+ReactDOM.createRoot(document.getElementById("root")).render(<ErrorBoundary><Gate/></ErrorBoundary>);
 </script>
 </body>
 </html>
