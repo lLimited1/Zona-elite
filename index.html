@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#080507">
+<link rel="icon" type="image/png" href="imagenes/favicon.png">
 <title>Zona elite — Panel de alquiler</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -71,7 +72,6 @@
   kbd{font-family:"JetBrains Mono",monospace; font-size:.66rem; padding:.05rem .35rem; border-radius:2px; border:1px solid rgb(var(--line)); border-bottom-width:2px; background:rgb(var(--surface2)); color:rgb(var(--ink))}
 
   /* ===== Marca ===== */
-  .logo-badge{background:rgb(var(--slab)); clip-path:polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%)}
   .brand-word{font-family:"Chakra Petch",sans-serif; font-weight:700; font-size:1.2rem; line-height:1; letter-spacing:.01em}
 
   /* ===== Superficies ===== */
@@ -309,7 +309,8 @@
   .empty-icon{color:rgb(var(--muted))}
   .view-in{animation:viewIn .3s cubic-bezier(.2,.8,.2,1) both}
   .boot{min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; font-family:"Chakra Petch",sans-serif; font-size:.8rem; color:rgb(var(--muted))}
-  .boot-logo{width:54px; height:54px; display:grid; place-items:center; color:#fff; font-weight:700; font-size:1.1rem; background:rgb(var(--slab)); clip-path:polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%); animation:blink 1.2s steps(2,start) infinite}
+  .boot-logo{width:96px; height:96px; object-fit:contain; animation:breathe 1.5s ease-in-out infinite}
+  @keyframes breathe{50%{opacity:.45; transform:scale(.94)}}
 
   /* ===== Animaciones ===== */
   @keyframes chipStrobe{50%{background:rgb(var(--c) / .55); color:#fff}}
@@ -329,7 +330,7 @@
 </style>
 </head>
 <body>
-<div id="root"><div class="boot"><div class="boot-logo">ZE</div>Cargando panel…</div></div>
+<div id="root"><div class="boot"><img class="boot-logo" src="imagenes/logo.png" alt="Zona Élite">Cargando panel…</div></div>
 <script type="text/babel" data-presets="react">
 const {useState,useEffect,useMemo,useRef,useCallback,createContext,useContext} = React;
 
@@ -419,23 +420,6 @@ const SEED_GAME_IMAGES = Object.fromEntries(Object.entries({
   26:"26-halo-infinite.jpg", 27:"27-battlefield-6.jpg", 28:"28-efootball.jpg", 29:"29-wwe-2k25.jpg", 30:"30-apex-legends.jpg",
   31:"31-hollow-knight-silksong.jpg", 32:"32-hades-ii.jpg", 33:"33-stardew-valley.jpg", 34:"34-cuphead.jpg",
 }).map(([id,f])=>[id,GAME_IMG_DIR+f]));
-
-const SEED_CONSOLES = [
-  {id:1,name:"PS5 #1",type:PS5,status:"alquilada",tarifa:2.5},
-  {id:2,name:"PS5 #2",type:PS5,status:"alquilada",tarifa:2.5},
-  {id:3,name:"Xbox #1",type:XSX,status:"disponible",tarifa:2.5},
-  {id:4,name:"Switch #1",type:NS2,status:"mantenimiento",tarifa:2},
-  {id:5,name:"Switch #2",type:NS2,status:"disponible",tarifa:2},
-  {id:6,name:"Steam Deck #1",type:DECK,status:"disponible",tarifa:2},
-];
-
-const SEED_SNACKS = [
-  {id:1,name:"Papas fritas",precio:1.5,stock:24},
-  {id:2,name:"Gaseosa 355ml",precio:1.2,stock:30},
-  {id:3,name:"Chocolate",precio:1,stock:18},
-  {id:4,name:"Energizante",precio:2.5,stock:15},
-  {id:5,name:"Hot dog",precio:2.8,stock:4},
-];
 
 const DEFAULT_SETTINGS = {
   tarifaBase:2,      // USD/h para consolas nuevas
@@ -821,18 +805,14 @@ function makeRental(p){
   };
 }
 
+// Estado inicial de un negocio nuevo: sin consolas, alquileres, historial ni snacks. Solo trae el catálogo de juegos.
 function defaultState(){
-  const t = Date.now();
   return {
     v:2,
-    consoles:SEED_CONSOLES.map(c=>({...c})),
-    rentals:[
-      makeRental({consoleId:1,consoleName:"PS5 #1",cliente:"Marcos Díaz",inicio:t-95*60000,minutos:180,precioHora:2.5,gameId:1,mandosExtra:1}),
-      makeRental({consoleId:2,consoleName:"PS5 #2",cliente:"Valeria Ríos",inicio:t-56*60000,minutos:60,precioHora:2.5,gameId:5}),
-    ],
-    history:[], snacks:SEED_SNACKS.map(s=>({...s})), snackSales:[],
+    consoles:[], rentals:[],
+    history:[], snacks:[], snackSales:[],
     games:SEED_GAMES.map(g=>({...g,plataformas:[...g.plataformas],img:SEED_GAME_IMAGES[g.id]||null})),
-    mandos:{total:8,danados:1},
+    mandos:{total:0,danados:0},
     settings:{...DEFAULT_SETTINGS},
     tasaBCV:40, outages:[],
   };
@@ -3041,7 +3021,7 @@ function AjustesView({app}){
             if(!f) return;
             confirm({title:"Restaurar respaldo", message:`Se reemplazarán todos los datos actuales por los de «${f.name}».`, confirmLabel:"Restaurar", icon:"upload", tone:"accent", onConfirm:()=>act.importBackup(f)});
           }}/>
-          <button className="btn btn-danger btn-sm sm:ml-auto" onClick={()=>confirm({title:"Borrar todos los datos", message:"Se eliminan consolas, alquileres, historial, snacks y ajustes, y el panel vuelve a los datos de ejemplo. Descarga un respaldo antes si lo necesitas.", confirmLabel:"Borrar todo", icon:"trash", onConfirm:act.resetAll})}>
+          <button className="btn btn-danger btn-sm sm:ml-auto" onClick={()=>confirm({title:"Borrar todos los datos", message:"Se elimina TODO: consolas, alquileres en curso, historial, ventas, snacks, mandos y ajustes. El panel queda vacío, solo con el catálogo de juegos. Esto no se puede deshacer: descarga un respaldo antes si lo necesitas.", confirmLabel:"Borrar todo", icon:"trash", onConfirm:act.resetAll})}>
             <Icon name="trash" size={14}/>Borrar todo
           </button>
         </div>
@@ -3071,7 +3051,7 @@ function Login(){
     <div className="min-h-screen flex items-center justify-center p-6">
       <form onSubmit={submit} className="panel p-6 w-full max-w-sm space-y-4">
         <div className="flex items-center gap-3 mb-2">
-          <div className="logo-badge w-10 h-10 grid place-items-center font-display font-bold text-white text-sm">ZE</div>
+          <img src="imagenes/logo.png" alt="Zona Élite" className="w-14 h-14 object-contain"/>
           <p className="brand-word">Zona <span className="text-accent">elite</span></p>
         </div>
         <div>
@@ -3132,7 +3112,7 @@ function Gate(){
   },[session]);
 
   if(status==="config") return <ConfigMissing/>;
-  if(status==="loading") return <div className="boot"><div className="boot-logo">ZE</div>Cargando panel…</div>;
+  if(status==="loading") return <div className="boot"><img className="boot-logo" src="imagenes/logo.png" alt="Zona Élite"/>Cargando panel…</div>;
   if(status==="signedOut") return <Login/>;
   if(status==="error") return <GateMessage title="No se pudo entrar" text={err} onSignOut={()=>sb.auth.signOut()}/>;
   if(status==="inactive") return <GateMessage title="Cuenta desactivada" text="La suscripción de este negocio no está activa. Contacta al administrador para reactivarla." onSignOut={()=>sb.auth.signOut()}/>;
@@ -3558,7 +3538,7 @@ function App({tenantId,onSignOut}){
       };
       reader.readAsText(file);
     },
-    resetAll(){ firedRef.current = new Set(); setState(defaultState()); notify("Datos reiniciados","warn","refresh"); },
+    resetAll(){ firedRef.current = new Set(); setState(defaultState()); notify("Todo borrado: el panel quedó vacío","warn","trash"); },
   };
 
   const app = {
@@ -3593,7 +3573,7 @@ function App({tenantId,onSignOut}){
           <aside className="sidebar lg:sticky lg:top-0 lg:h-screen lg:w-64 shrink-0 border-b lg:border-b-0 lg:border-r flex flex-col">
             <div className="flex items-center justify-between gap-3 px-4 pt-4 lg:px-5 lg:pt-6">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="logo-badge w-10 h-10 shrink-0 grid place-items-center font-display font-bold text-white text-sm">ZE</div>
+                <img src="imagenes/logo.png" alt="Zona Élite" className="w-11 h-11 shrink-0 object-contain"/>
                 <p className="brand-word">Zona <span className="text-accent">elite</span></p>
               </div>
               <div className="lg:hidden flex items-center gap-2">
